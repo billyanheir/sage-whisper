@@ -1,6 +1,12 @@
 """Tests for authentication endpoints and flows."""
 
+from datetime import datetime, timedelta
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from app.models.user import User
 
 
 class TestRegistration:
@@ -161,6 +167,164 @@ class TestProtectedRoutes:
         response = client.get("/logout", follow_redirects=False)
         assert response.status_code == 302
         assert "/login" in response.headers["location"]
+
+
+class TestForgotPassword:
+    """Tests for forgot password flow."""
+
+    def test_forgot_password_existing_email(self, client: TestClient, test_user: dict, db_session: Session):
+        """Request reset for existing email generates token."""
+        response = client.post(
+            "/api/v1/auth/forgot-password",
+            json={"email": "test@example.com"},
+        )
+        assert response.status_code == 200
+        assert "reset link has been generated" in response.json()["message"]
+
+        user = db_session.query(User).filter(User.email == "test@example.com").first()
+        assert user.password_reset_token is not None
+        assert user.password_reset_expires_at is not None
+
+    def test_forgot_password_nonexistent_email(self, client: TestClient):
+        """Request reset for non-existent email returns same message (no enumeration)."""
+        response = client.post(
+            "/api/v1/auth/forgot-password",
+            json={"email": "nobody@example.com"},
+        )
+        assert response.status_code == 200
+        assert "reset link has been generated" in response.json()["message"]
+
+    def test_forgot_password_web_page_renders(self, client: TestClient):
+        """Forgot password web page renders."""
+        response = client.get("/forgot-password")
+        assert response.status_code == 200
+        assert "Forgot your password?" in response.text
+
+    def test_forgot_password_web_submit(self, client: TestClient, test_user: dict):
+        """Web form submission shows success message."""
+        response = client.post(
+            "/forgot-password",
+            data={"email": "test@example.com"},
+        )
+        assert response.status_code == 200
+        assert "reset link has been generated" in response.text
+
+    def test_forgot_password_logs_reset_link(self, client: TestClient, test_user: dict):
+        """Reset link is logged to console for existing user."""
+        with patch("main.logger") as mock_logger:
+            client.post("/forgot-password", data={"email": "test@example.com"})
+            calls = [str(c) for c in mock_logger.info.call_args_list]
+            assert any("PASSWORD RESET" in c for c in calls)
+
+
+class TestResetPassword:
+    """Tests for password reset flow."""
+
+    def test_reset_with_valid_token(self, client: TestClient, test_user: dict, db_session: Session):
+        """Reset with valid token changes password and returns JWT for auto-login."""
+        from app.services.auth import AuthService
+
+        auth = AuthService()
+        token = auth.request_password_reset(db_session, "test@example.com")
+        assert token is not None
+
+        response = client.post(
+            "/api/v1/auth/reset-password",
+            json={"token": token, "new_password": "newpassword456"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "token" in data
+        assert data["email"] == "test@example.com"
+
+        # Verify new password works
+        login_response = client.post(
+            "/api/v1/auth/login",
+            json={"email": "test@example.com", "password": "newpassword456"},
+        )
+        assert login_response.status_code == 200
+
+    def test_reset_with_expired_token(self, client: TestClient, test_user: dict, db_session: Session):
+        """Reset with expired token returns error."""
+        from app.services.auth import AuthService
+
+        auth = AuthService()
+        token = auth.request_password_reset(db_session, "test@example.com")
+
+        # Manually expire the token
+        user = db_session.query(User).filter(User.email == "test@example.com").first()
+        user.password_reset_expires_at = datetime.utcnow() - timedelta(minutes=1)
+        db_session.commit()
+
+        response = client.post(
+            "/api/v1/auth/reset-password",
+            json={"token": token, "new_password": "newpassword456"},
+        )
+        assert response.status_code == 400
+        assert "expired" in response.json()["detail"].lower()
+
+    def test_reset_with_invalid_token(self, client: TestClient):
+        """Reset with invalid token returns error."""
+        response = client.post(
+            "/api/v1/auth/reset-password",
+            json={"token": "totally-bogus-token", "new_password": "newpassword456"},
+        )
+        assert response.status_code == 400
+        assert "Invalid" in response.json()["detail"]
+
+    def test_reset_password_web_page_renders(self, client: TestClient, test_user: dict, db_session: Session):
+        """Reset password web page renders with valid token."""
+        from app.services.auth import AuthService
+
+        auth = AuthService()
+        token = auth.request_password_reset(db_session, "test@example.com")
+
+        response = client.get(f"/reset-password?token={token}")
+        assert response.status_code == 200
+        assert "Set a new password" in response.text
+
+    def test_reset_password_web_page_missing_token(self, client: TestClient):
+        """Reset password web page shows error without token."""
+        response = client.get("/reset-password")
+        assert response.status_code == 200
+        assert "Missing reset token" in response.text
+
+    def test_reset_password_web_submit(self, client: TestClient, test_user: dict, db_session: Session):
+        """Web form reset sets cookie and redirects to dashboard."""
+        from app.services.auth import AuthService
+
+        auth = AuthService()
+        token = auth.request_password_reset(db_session, "test@example.com")
+
+        response = client.post(
+            "/reset-password",
+            data={"token": token, "new_password": "newpassword456"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert response.headers["location"] == "/"
+        assert "sw_auth_token" in response.cookies
+
+    def test_reset_clears_token(self, client: TestClient, test_user: dict, db_session: Session):
+        """After reset, the same token cannot be reused."""
+        from app.services.auth import AuthService
+
+        auth = AuthService()
+        token = auth.request_password_reset(db_session, "test@example.com")
+
+        # Use the token
+        response = client.post(
+            "/api/v1/auth/reset-password",
+            json={"token": token, "new_password": "newpassword456"},
+        )
+        assert response.status_code == 200
+
+        # Try to reuse
+        response = client.post(
+            "/api/v1/auth/reset-password",
+            json={"token": token, "new_password": "anotherpassword"},
+        )
+        assert response.status_code == 400
 
 
 class TestHealthCheck:

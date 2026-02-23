@@ -35,6 +35,7 @@ def db_session_fixture():
 def client_fixture(db_session: Session):
     """Create a test client with overridden DB dependency and disabled rate limiting."""
     from app.rate_limit import limiter
+    from app.routers import voice_notes as vn_module
     from main import app
 
     def override_get_db():
@@ -43,12 +44,16 @@ def client_fixture(db_session: Session):
         finally:
             pass
 
+    # Point background transcription threads at the test DB session
+    vn_module._session_factory = lambda: db_session
+
     app.dependency_overrides[get_db] = override_get_db
     limiter.enabled = False
     with TestClient(app) as c:
         yield c
     limiter.enabled = True
     app.dependency_overrides.clear()
+    vn_module._session_factory = None
 
 
 @pytest.fixture(name="test_user")

@@ -1,6 +1,7 @@
 """Tests for transcript list, search, pagination, and dashboard."""
 
 import io
+import time
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
@@ -38,11 +39,30 @@ def _upload_and_transcribe(client: TestClient, token: str, filename: str, text: 
         )
         mock_get_model.return_value = mock_model
 
-        resp = client.post(
+        client.post(
             f"/api/v1/voice-notes/{note_id}/transcribe",
             headers={"Authorization": f"Bearer {token}"},
         )
-        transcript_id = resp.json()["transcript_id"]
+
+        # Wait for background transcription to complete
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            note_resp = client.get(
+                f"/api/v1/voice-notes/{note_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if note_resp.json()["status"] == "completed":
+                break
+            time.sleep(0.1)
+
+    # Get transcript ID
+    tx_resp = client.get(
+        "/api/v1/transcripts/",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    items = tx_resp.json()["items"]
+    # Find the transcript for this note
+    transcript_id = items[0]["id"] if items else 0
 
     return note_id, transcript_id
 

@@ -1,14 +1,19 @@
 """Voice note API endpoints."""
 
+import logging
+import threading
+
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.dependencies import CurrentUser, get_current_user
 from app.rate_limit import limiter
 from app.schemas.voice_note import VoiceNoteListResponse, VoiceNoteResponse
 from app.services.transcription import get_transcription_service
 from app.services.voice_note import get_voice_note_service
+
+logger = logging.getLogger("sage_whisper")
 
 router = APIRouter(prefix="/api/v1/voice-notes", tags=["Voice Notes"])
 
@@ -90,13 +95,35 @@ def delete_voice_note(
     return {"detail": "Voice note deleted"}
 
 
+_session_factory = None
+
+
+def _run_transcription(note_id: int) -> None:
+    """Run transcription in a background thread with its own DB session."""
+    factory = _session_factory or SessionLocal
+    db = factory()
+    try:
+        from app.models.voice_note import VoiceNote
+
+        note = db.query(VoiceNote).filter(VoiceNote.id == note_id).first()
+        if not note:
+            return
+        tx_service = get_transcription_service()
+        tx_service.transcribe(db, note)
+        logger.info("Transcription complete for voice note %d", note_id)
+    except Exception:
+        logger.exception("Background transcription failed for voice note %d", note_id)
+    finally:
+        db.close()
+
+
 @router.post("/{note_id}/transcribe")
 def transcribe_voice_note(
     note_id: int,
     user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Transcribe a voice note using faster-whisper."""
+    """Kick off transcription in background and return immediately."""
     vn_service = get_voice_note_service()
     note = vn_service.get_voice_note(db, note_id, user.user_id)
     if not note:
@@ -105,7 +132,12 @@ def transcribe_voice_note(
     if note.status not in ("uploaded", "failed"):
         raise HTTPException(status_code=400, detail=f"Cannot transcribe note with status '{note.status}'")
 
-    tx_service = get_transcription_service()
-    transcript = tx_service.transcribe(db, note)
+    # Set status to transcribing immediately so the UI can show progress
+    note.status = "transcribing"
+    db.commit()
 
-    return {"detail": "Transcription complete", "transcript_id": transcript.id}
+    # Run transcription in background thread
+    thread = threading.Thread(target=_run_transcription, args=(note_id,), daemon=True)
+    thread.start()
+
+    return {"detail": "Transcription started", "note_id": note_id}

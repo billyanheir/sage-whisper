@@ -29,9 +29,10 @@ class TranscriptionService:
         """Transcribe a voice note. Updates status and creates transcript + segments."""
         settings = get_settings()
 
-        # Update status
-        voice_note.status = "transcribing"
-        db.commit()
+        # Ensure status is set (may already be set by caller)
+        if voice_note.status != "transcribing":
+            voice_note.status = "transcribing"
+            db.commit()
 
         file_path = Path(settings.UPLOAD_DIR) / str(voice_note.user_id) / voice_note.stored_filename
 

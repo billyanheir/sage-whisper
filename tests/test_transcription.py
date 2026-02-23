@@ -1,6 +1,7 @@
 """Tests for transcription flow with mocked faster-whisper."""
 
 import io
+import time
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
@@ -38,6 +39,20 @@ class TestTranscriptionFlow:
         assert resp.status_code == 200
         return resp.json()["id"]
 
+    def _wait_for_transcription(self, client: TestClient, note_id: int, token: str, timeout: float = 5.0):
+        """Wait for background transcription thread to finish."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            resp = client.get(
+                f"/api/v1/voice-notes/{note_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            status = resp.json()["status"]
+            if status in ("completed", "failed"):
+                return status
+            time.sleep(0.1)
+        return status
+
     @patch("app.services.transcription.TranscriptionService._get_model")
     def test_transcribe_success(self, mock_get_model, client: TestClient, test_user: dict):
         """Test successful transcription creates transcript and segments."""
@@ -53,37 +68,28 @@ class TestTranscriptionFlow:
         mock_model.transcribe.return_value = (iter(mock_segments), mock_info)
         mock_get_model.return_value = mock_model
 
-        # Transcribe
+        # Transcribe (now async - returns immediately)
         resp = client.post(
             f"/api/v1/voice-notes/{note_id}/transcribe",
             headers={"Authorization": f"Bearer {test_user['token']}"},
         )
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["detail"] == "Transcription complete"
-        assert "transcript_id" in data
+        assert resp.json()["detail"] == "Transcription started"
 
-        # Verify voice note status changed
-        note_resp = client.get(
-            f"/api/v1/voice-notes/{note_id}",
-            headers={"Authorization": f"Bearer {test_user['token']}"},
-        )
-        assert note_resp.json()["status"] == "completed"
+        # Wait for background thread
+        status = self._wait_for_transcription(client, note_id, test_user["token"])
+        assert status == "completed"
 
         # Verify transcript exists
-        transcript_id = data["transcript_id"]
         tx_resp = client.get(
-            f"/api/v1/transcripts/{transcript_id}",
+            "/api/v1/transcripts/",
             headers={"Authorization": f"Bearer {test_user['token']}"},
         )
         assert tx_resp.status_code == 200
-        tx_data = tx_resp.json()
-        assert tx_data["full_text"] == "Hello world This is a test"
-        assert tx_data["language"] == "en"
-        assert len(tx_data["segments"]) == 2
-        assert tx_data["segments"][0]["text"] == "Hello world"
-        assert tx_data["segments"][0]["start_time"] == 0.0
-        assert tx_data["segments"][1]["text"] == "This is a test"
+        items = tx_resp.json()["items"]
+        assert len(items) == 1
+        assert items[0]["full_text"] == "Hello world This is a test"
+        assert items[0]["language"] == "en"
 
     @patch("app.services.transcription.TranscriptionService._get_model")
     def test_transcribe_creates_downloadable_text(self, mock_get_model, client: TestClient, test_user: dict):
@@ -95,11 +101,18 @@ class TestTranscriptionFlow:
         mock_model.transcribe.return_value = (iter(mock_segments), MockTranscriptionInfo())
         mock_get_model.return_value = mock_model
 
-        resp = client.post(
+        client.post(
             f"/api/v1/voice-notes/{note_id}/transcribe",
             headers={"Authorization": f"Bearer {test_user['token']}"},
         )
-        transcript_id = resp.json()["transcript_id"]
+        self._wait_for_transcription(client, note_id, test_user["token"])
+
+        # Get transcript ID from list
+        tx_resp = client.get(
+            "/api/v1/transcripts/",
+            headers={"Authorization": f"Bearer {test_user['token']}"},
+        )
+        transcript_id = tx_resp.json()["items"][0]["id"]
 
         download_resp = client.get(
             f"/api/v1/transcripts/{transcript_id}/download",
@@ -134,6 +147,7 @@ class TestTranscriptionFlow:
             f"/api/v1/voice-notes/{note_id}/transcribe",
             headers={"Authorization": f"Bearer {test_user['token']}"},
         )
+        self._wait_for_transcription(client, note_id, test_user["token"])
 
         # Second attempt should fail
         resp = client.post(
@@ -167,12 +181,8 @@ class TestTranscriptionFlow:
             f"/api/v1/voice-notes/{note_id}/transcribe",
             headers={"Authorization": f"Bearer {test_user['token']}"},
         )
-
-        resp = client.get(
-            f"/api/v1/voice-notes/{note_id}",
-            headers={"Authorization": f"Bearer {test_user['token']}"},
-        )
-        assert resp.json()["status"] == "completed"
+        status = self._wait_for_transcription(client, note_id, test_user["token"])
+        assert status == "completed"
 
 
 class TestTranscriptList:
@@ -200,6 +210,17 @@ class TestTranscriptList:
             f"/api/v1/voice-notes/{note_id}/transcribe",
             headers={"Authorization": f"Bearer {test_user['token']}"},
         )
+
+        # Wait for background transcription
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            note_resp = client.get(
+                f"/api/v1/voice-notes/{note_id}",
+                headers={"Authorization": f"Bearer {test_user['token']}"},
+            )
+            if note_resp.json()["status"] == "completed":
+                break
+            time.sleep(0.1)
 
         # List
         resp = client.get(

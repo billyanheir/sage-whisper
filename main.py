@@ -68,7 +68,17 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
 
 # --- Audit logging middleware ---
 class AuditLogMiddleware(BaseHTTPMiddleware):
-    AUDIT_PATHS = {"/api/v1/voice-notes/", "/api/v1/auth/register", "/api/v1/auth/login", "/register", "/login"}
+    AUDIT_PATHS = {
+        "/api/v1/voice-notes/",
+        "/api/v1/auth/register",
+        "/api/v1/auth/login",
+        "/api/v1/auth/forgot-password",
+        "/api/v1/auth/reset-password",
+        "/register",
+        "/login",
+        "/forgot-password",
+        "/reset-password",
+    }
 
     async def dispatch(self, request: Request, call_next) -> Response:
         start = time.time()
@@ -228,6 +238,87 @@ def register_submit(
 
     response = RedirectResponse(url="/", status_code=302)
     set_auth_cookie(response, token)
+    return response  # type: ignore[return-value]
+
+
+@app.get("/forgot-password", response_class=HTMLResponse)
+def forgot_password_page(request: Request) -> HTMLResponse:
+    """Render forgot password page."""
+    return templates.TemplateResponse("forgot_password.html", {"request": request})
+
+
+@app.post("/forgot-password", response_class=HTMLResponse)
+def forgot_password_submit(
+    request: Request,
+    email: str = Form(...),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Handle forgot password form submission."""
+    auth_service = get_auth_service()
+    token = auth_service.request_password_reset(db, email)
+
+    if token:
+        base_url = str(request.base_url).rstrip("/")
+        logger.info("PASSWORD RESET: %s/reset-password?token=%s", base_url, token)
+
+    return templates.TemplateResponse(
+        "forgot_password.html",
+        {
+            "request": request,
+            "success": "If an account exists with that email, a reset link has been generated. Check the server console.",
+        },
+    )
+
+
+@app.get("/reset-password", response_class=HTMLResponse)
+def reset_password_page(request: Request, token: str = "", db: Session = Depends(get_db)) -> HTMLResponse:
+    """Render reset password page. Validates token before showing form."""
+    if not token:
+        return templates.TemplateResponse(
+            "reset_password.html",
+            {"request": request, "error": "Missing reset token.", "token": ""},
+        )
+
+    from datetime import datetime
+
+    from app.models.user import User
+
+    user = db.query(User).filter(User.password_reset_token == token).first()
+    if not user or not user.password_reset_expires_at or user.password_reset_expires_at < datetime.utcnow():
+        return templates.TemplateResponse(
+            "reset_password.html",
+            {"request": request, "error": "Invalid or expired reset link. Please request a new one.", "token": ""},
+        )
+
+    return templates.TemplateResponse("reset_password.html", {"request": request, "token": token})
+
+
+@app.post("/reset-password", response_class=HTMLResponse)
+def reset_password_submit(
+    request: Request,
+    token: str = Form(...),
+    new_password: str = Form(...),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Handle reset password form submission."""
+    auth_service = get_auth_service()
+    result = auth_service.reset_password(db, token, new_password)
+
+    if not result.success:
+        return templates.TemplateResponse(
+            "reset_password.html",
+            {"request": request, "error": result.error, "token": token},
+        )
+
+    jwt_service = get_jwt_service()
+    jwt_token = jwt_service.create_token(
+        user_id=result.user_id,  # type: ignore[arg-type]
+        email=result.email,  # type: ignore[arg-type]
+        display_name=result.display_name,  # type: ignore[arg-type]
+    )
+
+    response = RedirectResponse(url="/", status_code=302)
+    set_auth_cookie(response, jwt_token)
     return response  # type: ignore[return-value]
 
 

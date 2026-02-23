@@ -93,8 +93,8 @@
 
                         {% if note.status == 'uploaded' %}
                         <button hx-post="/api/v1/voice-notes/{{ note.id }}/transcribe"
-                                hx-swap="innerHTML"
-                                hx-target="#note-{{ note.id }}-status"
+                                hx-swap="none"
+                                hx-on::after-request="if(event.detail.successful) { this.remove(); htmx.ajax('GET', '/partials/transcription-status/{{ note.id }}', {target: '#note-{{ note.id }}-status', swap: 'innerHTML'}); }"
                                 class="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 transition-all">
                             Transcribe Now
                         </button>
@@ -115,7 +115,20 @@
                         </button>
                     </div>
                 </div>
-                <div id="note-{{ note.id }}-status"></div>
+                <div id="note-{{ note.id }}-status">
+                    {% if note.status == 'transcribing' %}
+                    <div class="mt-2 rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 flex items-center space-x-3"
+                         hx-get="/partials/transcription-status/{{ note.id }}"
+                         hx-trigger="load, every 2s"
+                         hx-swap="outerHTML">
+                        <svg class="animate-spin w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        <span class="text-sm text-amber-300">Transcribing... this may take a moment</span>
+                    </div>
+                    {% endif %}
+                </div>
                 {% endfor %}
             </div>
             {% else %}

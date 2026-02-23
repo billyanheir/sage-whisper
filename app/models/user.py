@@ -19,3 +19,5 @@ class User(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     last_login_at = Column(DateTime, nullable=True)
+    password_reset_token = Column(String(256), nullable=True, index=True)
+    password_reset_expires_at = Column(DateTime, nullable=True)

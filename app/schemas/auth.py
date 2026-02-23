@@ -18,3 +18,12 @@ class TokenResponse(BaseModel):
     token: str
     email: str
     display_name: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
