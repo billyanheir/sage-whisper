@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models.voice_note import VoiceNote
 
-ALLOWED_EXTENSIONS = {".mp3", ".m4a", ".wav", ".webm", ".ogg", ".flac"}
+ALLOWED_EXTENSIONS = {".mp3", ".m4a", ".mp4", ".wav", ".webm", ".ogg", ".flac"}
 ALLOWED_MIME_TYPES = {
     "audio/mpeg",
     "audio/mp4",
@@ -21,35 +21,38 @@ ALLOWED_MIME_TYPES = {
     "audio/ogg",
     "audio/flac",
     "audio/x-flac",
+    "video/mp4",  # iPhone voice memos shared via WhatsApp
 }
 
 
 class VoiceNoteService:
     """Handles voice note upload, storage, and management."""
 
-    def validate_upload(self, filename: str, content_type: str | None, file_size: int) -> str | None:
-        """Validate upload file. Returns error message or None if valid."""
-        settings = get_settings()
-
+    def validate_upload_metadata(self, filename: str, content_type: str | None) -> str | None:
+        """Validate upload file metadata (extension + MIME). Returns error message or None if valid."""
         # Check extension
         ext = Path(filename).suffix.lower()
         if ext not in ALLOWED_EXTENSIONS:
             return f"Unsupported file type '{ext}'. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
 
-        # Check MIME type (relaxed — some browsers send generic types)
-        if content_type and content_type not in ALLOWED_MIME_TYPES and not content_type.startswith("audio/"):
+        # Check MIME type (relaxed — some browsers/apps send generic or video types for audio)
+        if (
+            content_type
+            and content_type not in ALLOWED_MIME_TYPES
+            and not content_type.startswith("audio/")
+            and content_type != "video/mp4"
+        ):
             return f"Invalid content type '{content_type}'. Must be an audio file."
-
-        # Check size
-        max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
-        if file_size > max_bytes:
-            return f"File too large ({file_size // (1024 * 1024)}MB). Maximum: {settings.MAX_UPLOAD_SIZE_MB}MB"
 
         return None
 
     async def store_file(self, user_id: int, upload: UploadFile) -> tuple[str, int]:
-        """Stream uploaded file to disk. Returns (stored_filename, file_size_bytes)."""
+        """Stream uploaded file to disk with size limit. Returns (stored_filename, file_size_bytes).
+
+        Raises ValueError if file exceeds max upload size.
+        """
         settings = get_settings()
+        max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
         ext = Path(upload.filename or "audio.bin").suffix.lower()
         stored_filename = f"{uuid.uuid4()}{ext}"
         user_dir = Path(settings.UPLOAD_DIR) / str(user_id)
@@ -59,13 +62,22 @@ class VoiceNoteService:
         file_size = 0
         chunk_size = 1024 * 64  # 64KB chunks
 
-        with open(file_path, "wb") as f:
-            while True:
-                chunk = await upload.read(chunk_size)
-                if not chunk:
-                    break
-                f.write(chunk)
-                file_size += len(chunk)
+        try:
+            with open(file_path, "wb") as f:
+                while True:
+                    chunk = await upload.read(chunk_size)
+                    if not chunk:
+                        break
+                    file_size += len(chunk)
+                    if file_size > max_bytes:
+                        raise ValueError(
+                            f"File too large ({file_size // (1024 * 1024)}MB). Maximum: {settings.MAX_UPLOAD_SIZE_MB}MB"
+                        )
+                    f.write(chunk)
+        except ValueError:
+            if file_path.exists():
+                os.remove(file_path)
+            raise
 
         return stored_filename, file_size
 

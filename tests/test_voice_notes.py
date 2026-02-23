@@ -42,6 +42,16 @@ class TestVoiceNoteUpload:
         assert response.status_code == 200
         assert response.json()["original_filename"] == "recording.m4a"
 
+    def test_upload_mp4(self, client: TestClient, test_user: dict):
+        """Upload an mp4 file (iPhone voice memos shared via WhatsApp)."""
+        response = client.post(
+            "/api/v1/voice-notes/",
+            files={"file": ("voice_memo.mp4", io.BytesIO(b"\x00" * 512), "video/mp4")},
+            headers={"Authorization": f"Bearer {test_user['token']}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["original_filename"] == "voice_memo.mp4"
+
     def test_upload_requires_auth(self, client: TestClient):
         """Upload requires authentication."""
         response = client.post(

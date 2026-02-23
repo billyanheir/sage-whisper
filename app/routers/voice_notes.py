@@ -24,17 +24,16 @@ async def upload_voice_note(
     """Upload an audio file as a voice note."""
     service = get_voice_note_service()
 
-    # Read first chunk to estimate size, then validate
-    content = await file.read()
-    file_size = len(content)
-
-    error = service.validate_upload(file.filename or "", file.content_type, file_size)
+    # Validate extension + MIME type (no file read needed)
+    error = service.validate_upload_metadata(file.filename or "", file.content_type)
     if error:
         raise HTTPException(status_code=400, detail=error)
 
-    # Reset file position and store
-    await file.seek(0)
-    stored_filename, actual_size = await service.store_file(user.user_id, file)
+    # Stream directly to disk (single read, with size limit enforcement)
+    try:
+        stored_filename, actual_size = await service.store_file(user.user_id, file)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
     note = service.create_voice_note(
         db=db,
