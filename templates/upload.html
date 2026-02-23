@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block title %}Upload - Sage Whisper{% endblock %}
+
+{% block content %}
+<div class="space-y-8" x-data="uploadManager()">
+    <!-- Header -->
+    <div>
+        <h1 class="text-2xl font-bold text-white">Upload Voice Notes</h1>
+        <p class="text-gray-400 mt-1">Upload audio files recorded on your phone for transcription</p>
+    </div>
+
+    <!-- Upload zone -->
+    <div class="card-elevated rounded-2xl p-8">
+        <div class="border-2 border-dashed rounded-xl p-8 text-center transition-colors"
+             :class="dragover ? 'border-cyan-400 bg-cyan-500/5' : 'border-gray-600 hover:border-gray-500'"
+             @dragover.prevent="dragover = true"
+             @dragleave.prevent="dragover = false"
+             @drop.prevent="handleDrop($event)">
+
+            <div class="flex flex-col items-center space-y-4">
+                <div class="w-16 h-16 rounded-2xl bg-cyan-500/10 flex items-center justify-center">
+                    <svg class="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-white font-medium">Drop audio files here or
+                        <label class="text-cyan-400 hover:text-cyan-300 cursor-pointer">
+                            browse
+                            <input type="file" class="hidden" accept=".mp3,.m4a,.wav,.webm,.ogg,.flac,audio/*" multiple @change="handleFiles($event)">
+                        </label>
+                    </p>
+                    <p class="text-sm text-gray-500 mt-1">MP3, M4A, WAV, WebM, OGG, FLAC — up to 100MB</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload progress -->
+        <template x-for="(upload, index) in uploads" :key="index">
+            <div class="mt-4 rounded-xl bg-navy-900/50 border border-gray-700/50 p-4">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center space-x-3">
+                        <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+                        </svg>
+                        <span class="text-sm text-white" x-text="upload.name"></span>
+                    </div>
+                    <span class="text-xs" :class="upload.status === 'done' ? 'text-emerald-400' : upload.status === 'error' ? 'text-red-400' : 'text-cyan-400'" x-text="upload.statusText"></span>
+                </div>
+                <div class="w-full bg-gray-700 rounded-full h-1.5">
+                    <div class="h-1.5 rounded-full transition-all duration-300"
+                         :class="upload.status === 'done' ? 'bg-emerald-500' : upload.status === 'error' ? 'bg-red-500' : 'bg-cyan-500'"
+                         :style="`width: ${upload.progress}%`"></div>
+                </div>
+                <p x-show="upload.error" class="text-xs text-red-400 mt-1" x-text="upload.error"></p>
+            </div>
+        </template>
+    </div>
+
+    <!-- Voice notes list -->
+    <div>
+        <h2 class="text-lg font-semibold text-white mb-4">Your Voice Notes</h2>
+        <div id="notes-list">
+            {% if notes %}
+            <div class="space-y-3">
+                {% for note in notes %}
+                <div class="card-elevated rounded-xl p-4 flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <div class="w-10 h-10 rounded-lg flex items-center justify-center
+                            {% if note.status == 'completed' %}bg-emerald-500/10{% elif note.status == 'transcribing' %}bg-amber-500/10{% elif note.status == 'failed' %}bg-red-500/10{% else %}bg-cyan-500/10{% endif %}">
+                            <svg class="w-5 h-5 {% if note.status == 'completed' %}text-emerald-400{% elif note.status == 'transcribing' %}text-amber-400{% elif note.status == 'failed' %}text-red-400{% else %}text-cyan-400{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-white">{{ note.original_filename }}</p>
+                            <p class="text-xs text-gray-500">
+                                {{ "%.1f"|format(note.file_size_bytes / 1048576) }}MB
+                                &middot; {{ note.created_at.strftime('%b %d, %Y %H:%M') }}
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <!-- Status pill -->
+                        <span class="pill
+                            {% if note.status == 'completed' %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/30
+                            {% elif note.status == 'transcribing' %}bg-amber-500/10 text-amber-400 border border-amber-500/30
+                            {% elif note.status == 'failed' %}bg-red-500/10 text-red-400 border border-red-500/30
+                            {% else %}bg-cyan-500/10 text-cyan-400 border border-cyan-500/30{% endif %}">
+                            {{ note.status }}
+                        </span>
+
+                        {% if note.status == 'uploaded' %}
+                        <button hx-post="/api/v1/voice-notes/{{ note.id }}/transcribe"
+                                hx-swap="innerHTML"
+                                hx-target="#note-{{ note.id }}-status"
+                                class="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 transition-all">
+                            Transcribe Now
+                        </button>
+                        {% elif note.status == 'completed' %}
+                        <a href="/transcripts/{{ note.id }}" class="px-3 py-1.5 rounded-lg text-xs font-medium text-cyan-400 hover:text-cyan-300 border border-cyan-500/30 hover:border-cyan-500/50 transition-all">
+                            View Transcript
+                        </a>
+                        {% endif %}
+
+                        <button hx-delete="/api/v1/voice-notes/{{ note.id }}"
+                                hx-confirm="Delete this voice note?"
+                                hx-target="closest div.card-elevated"
+                                hx-swap="outerHTML"
+                                class="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div id="note-{{ note.id }}-status"></div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="card-elevated rounded-xl p-8 text-center">
+                <div class="w-12 h-12 rounded-xl bg-gray-700/50 flex items-center justify-center mx-auto mb-3">
+                    <svg class="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                    </svg>
+                </div>
+                <p class="text-gray-400">No voice notes yet. Upload your first audio file above.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function uploadManager() {
+    return {
+        dragover: false,
+        uploads: [],
+
+        handleDrop(event) {
+            this.dragover = false;
+            const files = event.dataTransfer.files;
+            this.processFiles(files);
+        },
+
+        handleFiles(event) {
+            const files = event.target.files;
+            this.processFiles(files);
+        },
+
+        processFiles(files) {
+            for (const file of files) {
+                this.uploadFile(file);
+            }
+        },
+
+        async uploadFile(file) {
+            const upload = {
+                name: file.name,
+                progress: 0,
+                status: 'uploading',
+                statusText: 'Uploading...',
+                error: null
+            };
+            this.uploads.push(upload);
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/v1/voice-notes/');
+
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        upload.progress = Math.round((e.loaded / e.total) * 100);
+                        upload.statusText = `${upload.progress}%`;
+                    }
+                };
+
+                xhr.onload = () => {
+                    if (xhr.status === 200) {
+                        upload.status = 'done';
+                        upload.progress = 100;
+                        upload.statusText = 'Complete';
+                        // Reload page to show new note
+                        setTimeout(() => window.location.reload(), 1000);
+                    } else {
+                        upload.status = 'error';
+                        upload.statusText = 'Failed';
+                        try {
+                            const err = JSON.parse(xhr.responseText);
+                            upload.error = err.detail || 'Upload failed';
+                        } catch {
+                            upload.error = 'Upload failed';
+                        }
+                    }
+                };
+
+                xhr.onerror = () => {
+                    upload.status = 'error';
+                    upload.statusText = 'Failed';
+                    upload.error = 'Network error';
+                };
+
+                xhr.send(formData);
+            } catch (err) {
+                upload.status = 'error';
+                upload.statusText = 'Failed';
+                upload.error = err.message;
+            }
+        }
+    };
+}
+</script>
+{% endblock %}

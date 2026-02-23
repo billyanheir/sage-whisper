@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Sage Whisper{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <!-- Welcome -->
+    <div>
+        <h1 class="text-2xl font-bold text-white">Welcome back, {{ user.display_name }}</h1>
+        <p class="text-gray-400 mt-1">Your voice note transcription dashboard</p>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="card-elevated rounded-2xl p-5">
+            <div class="flex items-center space-x-3 mb-3">
+                <div class="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                    </svg>
+                </div>
+                <span class="text-sm text-gray-400">Voice Notes</span>
+            </div>
+            <p class="text-3xl font-bold text-white">{{ total_notes }}</p>
+        </div>
+
+        <div class="card-elevated rounded-2xl p-5">
+            <div class="flex items-center space-x-3 mb-3">
+                <div class="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                </div>
+                <span class="text-sm text-gray-400">Transcripts</span>
+            </div>
+            <p class="text-3xl font-bold text-white">{{ total_transcripts }}</p>
+        </div>
+
+        <div class="card-elevated rounded-2xl p-5">
+            <div class="flex items-center space-x-3 mb-3">
+                <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+                <span class="text-sm text-gray-400">Total Duration</span>
+            </div>
+            <p class="text-3xl font-bold text-white">
+                {% if total_duration %}
+                {{ "%d"|format(total_duration // 60) }}m {{ "%d"|format(total_duration % 60) }}s
+                {% else %}
+                0m 0s
+                {% endif %}
+            </p>
+        </div>
+
+        <div class="card-elevated rounded-2xl p-5">
+            <div class="flex items-center space-x-3 mb-3">
+                <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                    </svg>
+                </div>
+                <span class="text-sm text-gray-400">Latest Upload</span>
+            </div>
+            <p class="text-sm font-medium text-white truncate">
+                {% if latest_note %}
+                {{ latest_note.original_filename }}
+                {% else %}
+                None yet
+                {% endif %}
+            </p>
+            {% if latest_note %}
+            <p class="text-xs text-gray-500 mt-1">{{ latest_note.created_at.strftime('%b %d, %Y %H:%M') }}</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Quick actions -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <a href="/upload" class="card-elevated rounded-2xl p-6 group cursor-pointer">
+            <div class="flex items-center space-x-4">
+                <div class="w-12 h-12 rounded-xl bg-cyan-500/10 flex items-center justify-center group-hover:bg-cyan-500/20 transition-colors">
+                    <svg class="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold text-white group-hover:text-cyan-400 transition-colors">Upload Audio</h3>
+                    <p class="text-sm text-gray-400">Upload voice notes for transcription</p>
+                </div>
+            </div>
+        </a>
+
+        <a href="/transcripts" class="card-elevated rounded-2xl p-6 group cursor-pointer">
+            <div class="flex items-center space-x-4">
+                <div class="w-12 h-12 rounded-xl bg-indigo-500/10 flex items-center justify-center group-hover:bg-indigo-500/20 transition-colors">
+                    <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors">Search Transcripts</h3>
+                    <p class="text-sm text-gray-400">Browse and search your transcriptions</p>
+                </div>
+            </div>
+        </a>
+    </div>
+
+    <!-- Recent transcripts -->
+    {% if recent_transcripts %}
+    <div>
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold text-white">Recent Transcripts</h2>
+            <a href="/transcripts" class="text-sm text-cyan-400 hover:text-cyan-300">View all</a>
+        </div>
+        <div class="space-y-3">
+            {% for tx in recent_transcripts %}
+            <a href="/transcripts/{{ tx.id }}" class="card-elevated rounded-xl p-4 block group">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3 min-w-0">
+                        <div class="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center flex-shrink-0">
+                            <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                        </div>
+                        <div class="min-w-0">
+                            <p class="text-sm font-medium text-white group-hover:text-cyan-400 transition-colors truncate">{{ tx.original_filename or 'Untitled' }}</p>
+                            <p class="text-xs text-gray-500 truncate">{{ tx.full_text[:100] }}{% if tx.full_text|length > 100 %}...{% endif %}</p>
+                        </div>
+                    </div>
+                    <span class="text-xs text-gray-500 flex-shrink-0 ml-4">{{ tx.created_at.strftime('%b %d') }}</span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

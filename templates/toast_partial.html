@@ -1,0 +1,5 @@
+{% if message %}
+<script>
+    showToast("{{ message | e }}", "{{ type or 'success' }}");
+</script>
+{% endif %}

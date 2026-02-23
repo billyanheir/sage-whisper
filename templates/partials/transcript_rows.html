@@ -1,0 +1,62 @@
+{% if transcripts %}
+<div class="space-y-3">
+    {% for tx in transcripts %}
+    <a href="/transcripts/{{ tx.id }}" class="card-elevated rounded-xl p-5 block group">
+        <div class="flex items-start justify-between">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center space-x-3 mb-2">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-sm font-medium text-white group-hover:text-cyan-400 transition-colors truncate">
+                        {{ tx.original_filename or 'Untitled' }}
+                    </h3>
+                </div>
+                <p class="text-sm text-gray-400 line-clamp-2 ml-11">{{ tx.full_text[:200] }}{% if tx.full_text|length > 200 %}...{% endif %}</p>
+            </div>
+            <div class="flex flex-col items-end space-y-1 ml-4 flex-shrink-0">
+                <span class="text-xs text-gray-500">{{ tx.created_at.strftime('%b %d, %Y') }}</span>
+                <span class="text-xs text-gray-500">{{ tx.language or '?' }} &middot; {{ tx.model_size }}</span>
+            </div>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if total > limit %}
+<div class="flex items-center justify-between mt-6">
+    <p class="text-sm text-gray-500">Showing {{ offset + 1 }}-{{ [offset + limit, total] | min }} of {{ total }}</p>
+    <div class="flex space-x-2">
+        {% if offset > 0 %}
+        <a href="/transcripts?offset={{ offset - limit }}&search={{ search or '' }}"
+           class="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-300 border border-gray-600/50 hover:border-cyan-500/50 hover:text-cyan-400 transition-colors">
+            Previous
+        </a>
+        {% endif %}
+        {% if offset + limit < total %}
+        <a href="/transcripts?offset={{ offset + limit }}&search={{ search or '' }}"
+           class="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-300 border border-gray-600/50 hover:border-cyan-500/50 hover:text-cyan-400 transition-colors">
+            Next
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="card-elevated rounded-xl p-8 text-center">
+    <div class="w-12 h-12 rounded-xl bg-gray-700/50 flex items-center justify-center mx-auto mb-3">
+        <svg class="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+    </div>
+    {% if search %}
+    <p class="text-gray-400">No transcripts matching "{{ search }}"</p>
+    {% else %}
+    <p class="text-gray-400">No transcripts yet. <a href="/upload" class="text-cyan-400 hover:text-cyan-300">Upload and transcribe</a> your first voice note.</p>
+    {% endif %}
+</div>
+{% endif %}
