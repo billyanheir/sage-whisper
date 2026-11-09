@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Generate BRD - {{ transcript.original_filename }} - Sage Whisper{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div>
+        <div class="flex items-center space-x-3 mb-1">
+            <a href="/transcripts/{{ transcript.id }}" class="text-gray-400 hover:text-cyan-400 transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+            </a>
+            <h1 class="text-2xl font-bold text-white">Generate BRD</h1>
+        </div>
+        <p class="text-gray-400 text-sm">From transcript: <span class="text-cyan-400">{{ transcript.original_filename }}</span></p>
+    </div>
+
+    <!-- Transcript preview -->
+    <div class="card-elevated rounded-2xl p-6">
+        <h2 class="text-lg font-semibold text-white mb-2">Transcript Preview</h2>
+        <p class="text-gray-400 text-sm mb-2">{{ transcript.full_text | length }} characters</p>
+        <div class="text-gray-300 text-sm leading-relaxed max-h-32 overflow-hidden relative">
+            {{ transcript.full_text[:500] }}{% if transcript.full_text | length > 500 %}...{% endif %}
+            <div class="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-navy-900/80 to-transparent"></div>
+        </div>
+    </div>
+
+    <!-- Context form -->
+    <form method="post" action="/brd/generate/{{ transcript.id }}" class="space-y-6">
+        <!-- Existing BRD -->
+        <div class="card-elevated rounded-2xl p-6">
+            <h2 class="text-lg font-semibold text-white mb-4">Building on Existing BRD</h2>
+            <p class="text-gray-400 text-sm mb-3">Optionally select a finalized BRD whose approved requirements will be included as context, so the LLM focuses on new or changed requirements.</p>
+            <select name="parent_brd_id"
+                    class="w-full rounded-xl bg-navy-800 border border-gray-700/50 text-gray-300 px-4 py-3 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30">
+                <option value="0">None (start fresh)</option>
+                {% for brd in finalized_brds %}
+                <option value="{{ brd.id }}">{{ brd.title }} ({{ brd.finalized_at.strftime('%b %d, %Y') if brd.finalized_at else 'N/A' }})</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- Project context -->
+        <div class="card-elevated rounded-2xl p-6">
+            <h2 class="text-lg font-semibold text-white mb-4">Project Context</h2>
+            <p class="text-gray-400 text-sm mb-3">Paste a README, system description, or any background info to help the LLM understand your existing system.</p>
+            <textarea name="project_context"
+                      rows="6"
+                      placeholder="Paste your README or describe your existing system..."
+                      class="w-full rounded-xl bg-navy-800 border border-gray-700/50 text-gray-300 px-4 py-3 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30 placeholder-gray-600 resize-y"></textarea>
+        </div>
+
+        <!-- GitHub repo -->
+        <div class="card-elevated rounded-2xl p-6">
+            <h2 class="text-lg font-semibold text-white mb-4">GitHub Repository</h2>
+            <p class="text-gray-400 text-sm mb-3">Provide a public GitHub repo URL to automatically fetch the README and file structure as context.</p>
+            <input type="text"
+                   name="github_repo_url"
+                   placeholder="https://github.com/user/repo"
+                   class="w-full rounded-xl bg-navy-800 border border-gray-700/50 text-gray-300 px-4 py-3 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30 placeholder-gray-600">
+        </div>
+
+        <!-- Submit -->
+        <div class="flex justify-end">
+            <button type="submit"
+                    class="px-6 py-3 rounded-xl text-sm font-medium text-white btn-cyan flex items-center space-x-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <span>Generate BRD</span>
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

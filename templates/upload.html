@@ -58,6 +58,54 @@
         </template>
     </div>
 
+    <!-- Import transcript zone -->
+    <div class="card-elevated rounded-2xl p-8" x-data="importManager()">
+        <div class="border-2 border-dashed rounded-xl p-8 text-center transition-colors"
+             :class="dragover ? 'border-indigo-400 bg-indigo-500/5' : 'border-gray-600 hover:border-gray-500'"
+             @dragover.prevent="dragover = true"
+             @dragleave.prevent="dragover = false"
+             @drop.prevent="handleDrop($event)">
+
+            <div class="flex flex-col items-center space-y-4">
+                <div class="w-16 h-16 rounded-2xl bg-indigo-500/10 flex items-center justify-center">
+                    <svg class="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-white font-medium">Import Transcript File — drop here or
+                        <label class="text-indigo-400 hover:text-indigo-300 cursor-pointer">
+                            browse
+                            <input type="file" class="hidden" accept=".txt,.vtt,.srt" @change="handleFiles($event)">
+                        </label>
+                    </p>
+                    <p class="text-sm text-gray-500 mt-1">TXT, VTT, SRT — existing transcripts from Teams, Zoom, Meet</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Import progress -->
+        <template x-for="(upload, index) in uploads" :key="index">
+            <div class="mt-4 rounded-xl bg-navy-900/50 border border-gray-700/50 p-4">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center space-x-3">
+                        <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <span class="text-sm text-white" x-text="upload.name"></span>
+                    </div>
+                    <span class="text-xs" :class="upload.status === 'done' ? 'text-emerald-400' : upload.status === 'error' ? 'text-red-400' : 'text-indigo-400'" x-text="upload.statusText"></span>
+                </div>
+                <div class="w-full bg-gray-700 rounded-full h-1.5">
+                    <div class="h-1.5 rounded-full transition-all duration-300"
+                         :class="upload.status === 'done' ? 'bg-emerald-500' : upload.status === 'error' ? 'bg-red-500' : 'bg-indigo-500'"
+                         :style="`width: ${upload.progress}%`"></div>
+                </div>
+                <p x-show="upload.error" class="text-xs text-red-400 mt-1" x-text="upload.error"></p>
+            </div>
+        </template>
+    </div>
+
     <!-- Voice notes list -->
     <div>
         <h2 class="text-lg font-semibold text-white mb-4">Your Voice Notes</h2>
@@ -68,10 +116,16 @@
                 <div class="card-elevated rounded-xl p-4 flex items-center justify-between">
                     <div class="flex items-center space-x-4">
                         <div class="w-10 h-10 rounded-lg flex items-center justify-center
-                            {% if note.status == 'completed' %}bg-emerald-500/10{% elif note.status == 'transcribing' %}bg-amber-500/10{% elif note.status == 'failed' %}bg-red-500/10{% else %}bg-cyan-500/10{% endif %}">
+                            {% if note.status == 'imported' %}bg-violet-500/10{% elif note.status == 'completed' %}bg-emerald-500/10{% elif note.status == 'transcribing' %}bg-amber-500/10{% elif note.status == 'failed' %}bg-red-500/10{% else %}bg-cyan-500/10{% endif %}">
+                            {% if note.status == 'imported' %}
+                            <svg class="w-5 h-5 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            {% else %}
                             <svg class="w-5 h-5 {% if note.status == 'completed' %}text-emerald-400{% elif note.status == 'transcribing' %}text-amber-400{% elif note.status == 'failed' %}text-red-400{% else %}text-cyan-400{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
                             </svg>
+                            {% endif %}
                         </div>
                         <div>
                             <p class="text-sm font-medium text-white">{{ note.original_filename }}</p>
@@ -84,7 +138,8 @@
                     <div class="flex items-center space-x-3">
                         <!-- Status pill -->
                         <span class="pill
-                            {% if note.status == 'completed' %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/30
+                            {% if note.status == 'imported' %}bg-violet-500/10 text-violet-400 border border-violet-500/30
+                            {% elif note.status == 'completed' %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/30
                             {% elif note.status == 'transcribing' %}bg-amber-500/10 text-amber-400 border border-amber-500/30
                             {% elif note.status == 'failed' %}bg-red-500/10 text-red-400 border border-red-500/30
                             {% else %}bg-cyan-500/10 text-cyan-400 border border-cyan-500/30{% endif %}">
@@ -98,7 +153,7 @@
                                 class="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 transition-all">
                             Transcribe Now
                         </button>
-                        {% elif note.status == 'completed' %}
+                        {% elif note.status == 'completed' or note.status == 'imported' %}
                         <a href="/transcripts/{{ note.id }}" class="px-3 py-1.5 rounded-lg text-xs font-medium text-cyan-400 hover:text-cyan-300 border border-cyan-500/30 hover:border-cyan-500/50 transition-all">
                             View Transcript
                         </a>
@@ -209,6 +264,86 @@ function uploadManager() {
                             upload.error = err.detail || 'Upload failed';
                         } catch {
                             upload.error = 'Upload failed';
+                        }
+                    }
+                };
+
+                xhr.onerror = () => {
+                    upload.status = 'error';
+                    upload.statusText = 'Failed';
+                    upload.error = 'Network error';
+                };
+
+                xhr.send(formData);
+            } catch (err) {
+                upload.status = 'error';
+                upload.statusText = 'Failed';
+                upload.error = err.message;
+            }
+        }
+    };
+}
+
+function importManager() {
+    return {
+        dragover: false,
+        uploads: [],
+
+        handleDrop(event) {
+            this.dragover = false;
+            const files = event.dataTransfer.files;
+            this.processFiles(files);
+        },
+
+        handleFiles(event) {
+            const files = event.target.files;
+            this.processFiles(files);
+        },
+
+        processFiles(files) {
+            for (const file of files) {
+                this.uploadFile(file);
+            }
+        },
+
+        async uploadFile(file) {
+            const upload = {
+                name: file.name,
+                progress: 0,
+                status: 'uploading',
+                statusText: 'Importing...',
+                error: null
+            };
+            this.uploads.push(upload);
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/v1/transcripts/import');
+
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        upload.progress = Math.round((e.loaded / e.total) * 100);
+                        upload.statusText = `${upload.progress}%`;
+                    }
+                };
+
+                xhr.onload = () => {
+                    if (xhr.status === 200) {
+                        upload.status = 'done';
+                        upload.progress = 100;
+                        upload.statusText = 'Imported';
+                        setTimeout(() => window.location.reload(), 1000);
+                    } else {
+                        upload.status = 'error';
+                        upload.statusText = 'Failed';
+                        try {
+                            const err = JSON.parse(xhr.responseText);
+                            upload.error = err.detail || 'Import failed';
+                        } catch {
+                            upload.error = 'Import failed';
                         }
                     }
                 };

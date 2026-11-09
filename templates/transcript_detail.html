@@ -16,6 +16,11 @@
                 <h1 class="text-2xl font-bold text-white">{{ transcript.original_filename }}</h1>
             </div>
             <div class="flex items-center space-x-4 text-sm text-gray-400">
+                {% if transcript.model_size == 'imported' %}
+                <span class="text-violet-400">imported</span>
+                <span>&middot;</span>
+                <span>{{ transcript.created_at.strftime('%b %d, %Y %H:%M') }}</span>
+                {% else %}
                 <span>{{ transcript.language or 'Unknown' }} language</span>
                 <span>&middot;</span>
                 <span>{{ transcript.model_size }} model</span>
@@ -23,15 +28,25 @@
                 <span>{{ "%.1f"|format(transcript.processing_time_seconds) }}s processing</span>
                 <span>&middot;</span>
                 <span>{{ transcript.created_at.strftime('%b %d, %Y %H:%M') }}</span>
+                {% endif %}
             </div>
         </div>
-        <a href="/api/v1/transcripts/{{ transcript.id }}/download"
-           class="px-4 py-2 rounded-xl text-sm font-medium text-white btn-cyan flex items-center space-x-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-            </svg>
-            <span>Download .txt</span>
-        </a>
+        <div class="flex items-center space-x-3">
+            <a href="/brd/generate/{{ transcript.id }}"
+               class="px-4 py-2 rounded-xl text-sm font-medium text-white btn-cyan flex items-center space-x-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <span>Generate BRD</span>
+            </a>
+            <a href="/api/v1/transcripts/{{ transcript.id }}/download"
+               class="px-4 py-2 rounded-xl text-sm font-medium text-white btn-cyan flex items-center space-x-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <span>Download .txt</span>
+            </a>
+        </div>
     </div>
 
     <!-- Full text card -->

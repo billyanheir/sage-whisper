@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}{{ brd.title }} - Sage Whisper{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <div class="flex items-center space-x-3 mb-1">
+                <a href="/transcripts" class="text-gray-400 hover:text-cyan-400 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                    </svg>
+                </a>
+                <h1 class="text-2xl font-bold text-white">{{ brd.title }}</h1>
+            </div>
+            <div class="flex items-center space-x-4 text-sm text-gray-400">
+                <span class="pill {% if brd.status == 'finalized' %}bg-emerald-500/20 text-emerald-300{% elif brd.status == 'review' %}bg-amber-500/20 text-amber-300{% else %}bg-cyan-500/20 text-cyan-300{% endif %}">
+                    {{ brd.status | upper }}
+                </span>
+                <span>&middot;</span>
+                <span>{{ brd.created_at.strftime('%b %d, %Y %H:%M') }}</span>
+                {% if brd.finalized_at %}
+                <span>&middot;</span>
+                <span>Finalized {{ brd.finalized_at.strftime('%b %d, %Y %H:%M') }}</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="flex items-center space-x-3">
+            {% if brd.status == 'review' %}
+            <a href="/brd/{{ brd.id }}/review"
+               class="px-4 py-2 rounded-xl text-sm font-medium text-amber-300 bg-amber-500/20 border border-amber-500/30 hover:bg-amber-500/30 flex items-center space-x-2 transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                </svg>
+                <span>Continue Review</span>
+            </a>
+            {% endif %}
+            <a href="/api/v1/brd/{{ brd.id }}/download"
+               class="px-4 py-2 rounded-xl text-sm font-medium text-white btn-cyan flex items-center space-x-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <span>Download .md</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Requirements grouped by category -->
+    {% set approved_reqs = [] %}
+    {% for req in brd.requirements %}
+        {% if req.status in ['approved', 'edited'] %}
+            {% set _ = approved_reqs.append(req) %}
+        {% endif %}
+    {% endfor %}
+
+    {% if approved_reqs %}
+    {% set categories = {} %}
+    {% for req in approved_reqs %}
+        {% if req.category not in categories %}
+            {% set _ = categories.update({req.category: []}) %}
+        {% endif %}
+        {% set _ = categories[req.category].append(req) %}
+    {% endfor %}
+
+    {% for category, reqs in categories.items() %}
+    <div class="card-elevated rounded-2xl p-6">
+        <h2 class="text-lg font-semibold text-white mb-4 flex items-center space-x-2">
+            <span class="pill bg-indigo-500/20 text-indigo-300">{{ category }}</span>
+            <span class="text-gray-500 text-sm font-normal">({{ reqs | length }} requirements)</span>
+        </h2>
+        <div class="space-y-3">
+            {% for req in reqs %}
+            <div class="flex items-start space-x-3 group">
+                <span class="flex-shrink-0 mt-1 pill
+                    {% if req.priority == 'must' %}bg-red-500/20 text-red-300
+                    {% elif req.priority == 'should' %}bg-amber-500/20 text-amber-300
+                    {% elif req.priority == 'could' %}bg-cyan-500/20 text-cyan-300
+                    {% else %}bg-gray-500/20 text-gray-400{% endif %}">
+                    {{ req.priority | upper }}
+                </span>
+                <p class="text-gray-300 text-sm leading-relaxed">{{ req.requirement_text }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="card-elevated rounded-2xl p-8 text-center">
+        <p class="text-gray-400">No approved requirements in this BRD.</p>
+    </div>
+    {% endif %}
+
+    <!-- Rejected requirements (collapsed) -->
+    {% set rejected_reqs = [] %}
+    {% for req in brd.requirements %}
+        {% if req.status == 'rejected' %}
+            {% set _ = rejected_reqs.append(req) %}
+        {% endif %}
+    {% endfor %}
+
+    {% if rejected_reqs %}
+    <div x-data="{ open: false }" class="card-elevated rounded-2xl p-6">
+        <button @click="open = !open" class="flex items-center space-x-2 text-gray-400 hover:text-gray-300 transition-colors">
+            <svg class="w-4 h-4 transition-transform" :class="{ 'rotate-90': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+            </svg>
+            <span class="text-sm">{{ rejected_reqs | length }} rejected requirement{{ 's' if rejected_reqs | length != 1 }}</span>
+        </button>
+        <div x-show="open" x-transition class="mt-4 space-y-2">
+            {% for req in rejected_reqs %}
+            <p class="text-gray-500 text-sm line-through">{{ req.requirement_text }}</p>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

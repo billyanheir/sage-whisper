@@ -20,8 +20,9 @@ from app.dependencies import (
     set_auth_cookie,
 )
 from app.rate_limit import limiter
-from app.routers import auth_router, transcripts_router, voice_notes_router
+from app.routers import auth_router, brd_router, transcripts_router, voice_notes_router
 from app.services.auth import get_auth_service
+from app.services.brd import get_brd_service
 from app.services.jwt import get_jwt_service
 from app.services.transcript import get_transcript_service
 from app.services.voice_note import get_voice_note_service
@@ -70,6 +71,7 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
 class AuditLogMiddleware(BaseHTTPMiddleware):
     AUDIT_PATHS = {
         "/api/v1/voice-notes/",
+        "/api/v1/transcripts/import",
         "/api/v1/auth/register",
         "/api/v1/auth/login",
         "/api/v1/auth/forgot-password",
@@ -115,6 +117,7 @@ templates = Jinja2Templates(directory="templates")
 app.include_router(auth_router)
 app.include_router(voice_notes_router)
 app.include_router(transcripts_router)
+app.include_router(brd_router)
 
 
 # --- Rate limit error handler ---
@@ -469,4 +472,152 @@ def transcript_rows_partial(
             "offset": offset,
             "limit": limit,
         },
+    )
+
+
+# --- BRD web routes ---
+@app.get("/brd/generate/{transcript_id}", response_class=HTMLResponse)
+def brd_generate_page(
+    request: Request,
+    transcript_id: int,
+    user=Depends(require_web_auth),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Render BRD context form page."""
+    tx_service = get_transcript_service()
+    transcript = tx_service.get_transcript_with_segments(db, transcript_id, user.user_id)
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+
+    brd_service = get_brd_service()
+    finalized_brds = brd_service.get_finalized_brds(db, user.user_id)
+
+    return templates.TemplateResponse(
+        "brd_generate.html",
+        {
+            "request": request,
+            "user": user,
+            "transcript": transcript,
+            "finalized_brds": finalized_brds,
+        },
+    )
+
+
+@app.post("/brd/generate/{transcript_id}", response_class=HTMLResponse)
+def brd_generate_submit(
+    request: Request,
+    transcript_id: int,
+    parent_brd_id: int | None = Form(None),
+    project_context: str | None = Form(None),
+    github_repo_url: str | None = Form(None),
+    user=Depends(require_web_auth),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Process BRD context form and start generation."""
+    from datetime import datetime
+
+    from app.models.brd import BRD
+    from app.models.transcript import Transcript
+    from app.models.voice_note import VoiceNote
+    from app.routers.brd import _run_brd_generation
+
+    transcript = db.query(Transcript).filter(Transcript.id == transcript_id, Transcript.user_id == user.user_id).first()
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+
+    voice_note = db.query(VoiceNote).filter(VoiceNote.id == transcript.voice_note_id).first()
+    title = f"BRD - {voice_note.original_filename}" if voice_note else f"BRD - Transcript #{transcript_id}"
+
+    # Normalize empty strings to None
+    if project_context is not None and not project_context.strip():
+        project_context = None
+    if github_repo_url is not None and not github_repo_url.strip():
+        github_repo_url = None
+    if parent_brd_id is not None and parent_brd_id == 0:
+        parent_brd_id = None
+
+    brd = BRD(
+        transcript_id=transcript_id,
+        user_id=user.user_id,
+        title=title,
+        status="generating",
+        project_context=project_context,
+        github_repo_url=github_repo_url,
+        parent_brd_id=parent_brd_id,
+        created_at=datetime.utcnow(),
+    )
+    db.add(brd)
+    db.commit()
+    db.refresh(brd)
+
+    import threading
+
+    thread = threading.Thread(target=_run_brd_generation, args=(brd.id,), daemon=True)
+    thread.start()
+
+    return RedirectResponse(url=f"/brd/{brd.id}/review", status_code=302)  # type: ignore[return-value]
+
+
+@app.get("/brd/{brd_id}/review", response_class=HTMLResponse)
+def brd_review_page(
+    request: Request,
+    brd_id: int,
+    user=Depends(require_web_auth),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Render BRD review wizard page."""
+    brd_service = get_brd_service()
+    brd_data = brd_service.get_brd(db, brd_id, user.user_id)
+    if not brd_data:
+        raise HTTPException(status_code=404, detail="BRD not found")
+    # Convert requirements to dicts for JSON serialization in template
+    brd_data["requirements_json"] = [
+        {
+            "id": r.id,
+            "requirement_text": r.requirement_text,
+            "category": r.category,
+            "priority": r.priority,
+            "status": r.status,
+            "sort_order": r.sort_order,
+            "parent_id": r.parent_id,
+        }
+        for r in brd_data["requirements"]
+    ]
+    return templates.TemplateResponse(
+        "brd_review.html",
+        {"request": request, "user": user, "brd": brd_data},
+    )
+
+
+@app.get("/brd/{brd_id}", response_class=HTMLResponse)
+def brd_final_page(
+    request: Request,
+    brd_id: int,
+    user=Depends(require_web_auth),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Render finalized BRD view page."""
+    brd_service = get_brd_service()
+    brd_data = brd_service.get_brd(db, brd_id, user.user_id)
+    if not brd_data:
+        raise HTTPException(status_code=404, detail="BRD not found")
+    return templates.TemplateResponse(
+        "brd_final.html",
+        {"request": request, "user": user, "brd": brd_data},
+    )
+
+
+@app.get("/partials/brd-status/{brd_id}", response_class=HTMLResponse)
+def brd_status_partial(
+    request: Request,
+    brd_id: int,
+    user=Depends(require_web_auth),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """HTMX polling partial for BRD generation status."""
+    brd_service = get_brd_service()
+    brd_data = brd_service.get_brd(db, brd_id, user.user_id)
+    return templates.TemplateResponse(
+        "partials/brd_status.html",
+        {"request": request, "brd": brd_data},
     )

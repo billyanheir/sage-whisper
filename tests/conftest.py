@@ -7,10 +7,29 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
+from app.models.brd import BRD, BRDRequirement  # noqa: F401
 from app.models.transcript import Transcript, TranscriptSegment  # noqa: F401
 from app.models.user import User  # noqa: F401
 from app.models.voice_note import VoiceNote  # noqa: F401
 from app.services.auth import AuthService
+
+
+class _NonClosingSessionProxy:
+    """Proxy that prevents background threads from closing the shared test session.
+
+    Background threads call db.close() in their finally blocks. For tests, this would
+    invalidate the shared session's identity map and break subsequent operations.
+    Instead, we expire all objects (clearing stale state) without actually closing.
+    """
+
+    def __init__(self, session: Session):
+        self._session = session
+
+    def close(self) -> None:
+        self._session.expire_all()
+
+    def __getattr__(self, name: str):
+        return getattr(self._session, name)
 
 
 @pytest.fixture(name="db_session")
@@ -35,6 +54,7 @@ def db_session_fixture():
 def client_fixture(db_session: Session):
     """Create a test client with overridden DB dependency and disabled rate limiting."""
     from app.rate_limit import limiter
+    from app.routers import brd as brd_module
     from app.routers import voice_notes as vn_module
     from main import app
 
@@ -44,8 +64,10 @@ def client_fixture(db_session: Session):
         finally:
             pass
 
-    # Point background transcription threads at the test DB session
+    # Point background threads at the test DB session
+    # BRD uses a proxy to prevent close() from invalidating the identity map
     vn_module._session_factory = lambda: db_session
+    brd_module._session_factory = lambda: _NonClosingSessionProxy(db_session)
 
     app.dependency_overrides[get_db] = override_get_db
     limiter.enabled = False
@@ -54,6 +76,7 @@ def client_fixture(db_session: Session):
     limiter.enabled = True
     app.dependency_overrides.clear()
     vn_module._session_factory = None
+    brd_module._session_factory = None
 
 
 @pytest.fixture(name="test_user")

@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+
+{% block title %}Review BRD - {{ brd.title }} - Sage Whisper{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div>
+        <div class="flex items-center space-x-3 mb-1">
+            <a href="/transcripts" class="text-gray-400 hover:text-cyan-400 transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+            </a>
+            <h1 class="text-2xl font-bold text-white">{{ brd.title }}</h1>
+        </div>
+        <p class="text-gray-400 text-sm">Review and refine your requirements</p>
+    </div>
+
+    <!-- Status polling / Wizard -->
+    <div id="brd-content"
+         {% if brd.status == 'generating' %}
+         hx-get="/partials/brd-status/{{ brd.id }}"
+         hx-trigger="every 2s"
+         hx-swap="innerHTML"
+         {% endif %}>
+
+        {% if brd.status == 'generating' %}
+        <!-- Generating spinner -->
+        <div class="card-elevated rounded-2xl p-12 text-center">
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-cyan-500/10 mb-4">
+                <svg class="w-8 h-8 text-cyan-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
+            <h2 class="text-xl font-semibold text-white mb-2">Generating BRD...</h2>
+            <p class="text-gray-400">Analyzing transcript and extracting requirements with Ollama</p>
+        </div>
+
+        {% elif brd.status in ['review', 'finalized'] %}
+        <!-- Alpine.js Review Wizard -->
+        <div x-data="reviewWizard()" class="space-y-6">
+            <!-- Progress bar -->
+            <div class="card-elevated rounded-2xl p-4">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm text-gray-400">Progress</span>
+                    <span class="text-sm text-cyan-400" x-text="reviewedCount + '/' + totalCount + ' reviewed'"></span>
+                </div>
+                <div class="w-full bg-navy-800 rounded-full h-2">
+                    <div class="bg-gradient-to-r from-cyan-500 to-indigo-500 h-2 rounded-full transition-all duration-300"
+                         :style="'width: ' + progressPercent + '%'"></div>
+                </div>
+            </div>
+
+            <!-- Current requirement card -->
+            <template x-if="currentReq">
+                <div class="card-elevated rounded-2xl p-6 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-lg font-semibold text-white">
+                            Requirement <span x-text="currentIndex + 1"></span> of <span x-text="totalCount"></span>
+                        </h2>
+                        <div class="flex items-center space-x-2">
+                            <span class="pill bg-indigo-500/20 text-indigo-300" x-text="currentReq.category"></span>
+                            <span class="pill"
+                                  :class="{
+                                      'bg-red-500/20 text-red-300': currentReq.priority === 'must',
+                                      'bg-amber-500/20 text-amber-300': currentReq.priority === 'should',
+                                      'bg-cyan-500/20 text-cyan-300': currentReq.priority === 'could',
+                                      'bg-gray-500/20 text-gray-400': currentReq.priority === 'wont'
+                                  }"
+                                  x-text="currentReq.priority.toUpperCase()"></span>
+                        </div>
+                    </div>
+
+                    <!-- Requirement text (view mode) -->
+                    <div x-show="!editing">
+                        <p class="text-gray-300 leading-relaxed" x-text="currentReq.requirement_text"></p>
+                    </div>
+
+                    <!-- Requirement text (edit mode) -->
+                    <div x-show="editing" class="space-y-3">
+                        <textarea x-model="editText" rows="4"
+                                  class="w-full rounded-xl bg-navy-800 border border-cyan-500/30 text-gray-300 px-4 py-3 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30 resize-y"></textarea>
+                        <div class="flex items-center space-x-3">
+                            <select x-model="editCategory"
+                                    class="rounded-xl bg-navy-800 border border-gray-700/50 text-gray-300 px-3 py-2 text-sm focus:outline-none focus:border-cyan-500/50">
+                                <option value="Functional">Functional</option>
+                                <option value="Non-Functional">Non-Functional</option>
+                                <option value="UI/UX">UI/UX</option>
+                                <option value="Security">Security</option>
+                                <option value="Performance">Performance</option>
+                                <option value="Integration">Integration</option>
+                                <option value="Data">Data</option>
+                                <option value="General">General</option>
+                            </select>
+                            <select x-model="editPriority"
+                                    class="rounded-xl bg-navy-800 border border-gray-700/50 text-gray-300 px-3 py-2 text-sm focus:outline-none focus:border-cyan-500/50">
+                                <option value="must">Must</option>
+                                <option value="should">Should</option>
+                                <option value="could">Could</option>
+                                <option value="wont">Won't</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Status badge for already-reviewed -->
+                    <div x-show="currentReq.status !== 'pending'" class="flex items-center space-x-2">
+                        <span class="pill"
+                              :class="{
+                                  'bg-emerald-500/20 text-emerald-300': currentReq.status === 'approved',
+                                  'bg-red-500/20 text-red-300': currentReq.status === 'rejected',
+                                  'bg-amber-500/20 text-amber-300': currentReq.status === 'edited'
+                              }"
+                              x-text="currentReq.status.toUpperCase()"></span>
+                    </div>
+
+                    <!-- Action buttons -->
+                    <div class="flex flex-wrap items-center gap-3 pt-2 border-t border-gray-700/50">
+                        <template x-if="!editing">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <button @click="approveReq()" :disabled="loading"
+                                        class="px-4 py-2 rounded-xl text-sm font-medium bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors">
+                                    Approve
+                                </button>
+                                <button @click="startEdit()" :disabled="loading"
+                                        class="px-4 py-2 rounded-xl text-sm font-medium bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30 transition-colors">
+                                    Edit
+                                </button>
+                                <button @click="rejectReq()" :disabled="loading"
+                                        class="px-4 py-2 rounded-xl text-sm font-medium bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30 transition-colors">
+                                    Reject
+                                </button>
+                                <button @click="splitReq()" :disabled="loading"
+                                        class="px-4 py-2 rounded-xl text-sm font-medium bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/30 transition-colors">
+                                    <span x-show="!splitting">Split</span>
+                                    <span x-show="splitting">Splitting...</span>
+                                </button>
+                            </div>
+                        </template>
+                        <template x-if="editing">
+                            <div class="flex items-center gap-3">
+                                <button @click="saveEdit()" :disabled="loading"
+                                        class="px-4 py-2 rounded-xl text-sm font-medium btn-cyan">
+                                    Save
+                                </button>
+                                <button @click="cancelEdit()"
+                                        class="px-4 py-2 rounded-xl text-sm font-medium text-gray-400 hover:text-white transition-colors">
+                                    Cancel
+                                </button>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Navigation -->
+                    <div class="flex items-center justify-between pt-2">
+                        <button @click="prevReq()" :disabled="currentIndex === 0"
+                                class="text-sm text-gray-400 hover:text-cyan-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                            &larr; Previous
+                        </button>
+                        <button @click="nextReq()" :disabled="currentIndex >= totalCount - 1"
+                                class="text-sm text-gray-400 hover:text-cyan-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                            Next &rarr;
+                        </button>
+                    </div>
+                </div>
+            </template>
+
+            <!-- No requirements -->
+            <template x-if="!currentReq && totalCount === 0">
+                <div class="card-elevated rounded-2xl p-8 text-center">
+                    <p class="text-gray-400">No requirements were extracted. Try generating again with more context.</p>
+                </div>
+            </template>
+
+            <!-- Finalize button -->
+            <div x-show="allReviewed && totalCount > 0" class="flex justify-end">
+                <button @click="finalizeBrd()" :disabled="loading"
+                        class="px-6 py-3 rounded-xl text-sm font-medium text-white btn-cyan flex items-center space-x-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    <span>Finalize BRD</span>
+                </button>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function reviewWizard() {
+    const brdId = {{ brd.id }};
+    const initialReqs = {{ brd.requirements_json | tojson | safe }};
+
+    return {
+        requirements: initialReqs.map(r => ({
+            id: r.id,
+            requirement_text: r.requirement_text,
+            category: r.category,
+            priority: r.priority,
+            status: r.status,
+            sort_order: r.sort_order,
+            parent_id: r.parent_id
+        })),
+        currentIndex: 0,
+        editing: false,
+        editText: '',
+        editCategory: '',
+        editPriority: '',
+        loading: false,
+        splitting: false,
+
+        get totalCount() { return this.requirements.length; },
+        get currentReq() { return this.requirements[this.currentIndex] || null; },
+        get reviewedCount() {
+            return this.requirements.filter(r => r.status !== 'pending').length;
+        },
+        get progressPercent() {
+            return this.totalCount > 0 ? Math.round((this.reviewedCount / this.totalCount) * 100) : 0;
+        },
+        get allReviewed() {
+            return this.totalCount > 0 && this.requirements.every(r => r.status !== 'pending');
+        },
+
+        async approveReq() {
+            await this.updateReq({ status: 'approved' });
+            this.autoAdvance();
+        },
+        async rejectReq() {
+            await this.updateReq({ status: 'rejected' });
+            this.autoAdvance();
+        },
+        startEdit() {
+            this.editText = this.currentReq.requirement_text;
+            this.editCategory = this.currentReq.category;
+            this.editPriority = this.currentReq.priority;
+            this.editing = true;
+        },
+        cancelEdit() {
+            this.editing = false;
+        },
+        async saveEdit() {
+            await this.updateReq({
+                status: 'edited',
+                requirement_text: this.editText,
+                category: this.editCategory,
+                priority: this.editPriority
+            });
+            this.editing = false;
+            this.autoAdvance();
+        },
+        async splitReq() {
+            this.splitting = true;
+            this.loading = true;
+            try {
+                const resp = await fetch(`/api/v1/brd/${brdId}/requirements/${this.currentReq.id}/split`, {
+                    method: 'POST'
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    // Update parent as rejected
+                    this.currentReq.status = 'rejected';
+                    // Insert children after current index
+                    const newReqs = data.requirements.map(r => ({
+                        id: r.id,
+                        requirement_text: r.requirement_text,
+                        category: r.category,
+                        priority: r.priority,
+                        status: r.status,
+                        sort_order: r.sort_order,
+                        parent_id: r.parent_id
+                    }));
+                    this.requirements.splice(this.currentIndex + 1, 0, ...newReqs);
+                    this.autoAdvance();
+                    if (typeof showToast === 'function') showToast(`Split into ${data.requirements.length} sub-requirements`, 'success');
+                } else {
+                    if (typeof showToast === 'function') showToast('Failed to split requirement', 'error');
+                }
+            } catch (err) {
+                if (typeof showToast === 'function') showToast('Failed to split requirement', 'error');
+            } finally {
+                this.splitting = false;
+                this.loading = false;
+            }
+        },
+        async updateReq(updates) {
+            this.loading = true;
+            try {
+                const resp = await fetch(`/api/v1/brd/${brdId}/requirements/${this.currentReq.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updates)
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    Object.assign(this.currentReq, {
+                        status: data.status,
+                        requirement_text: data.requirement_text,
+                        category: data.category,
+                        priority: data.priority
+                    });
+                }
+            } catch (err) {
+                if (typeof showToast === 'function') showToast('Failed to update requirement', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+        autoAdvance() {
+            // Move to next pending requirement, or stay
+            const nextPending = this.requirements.findIndex((r, i) => i > this.currentIndex && r.status === 'pending');
+            if (nextPending !== -1) {
+                this.currentIndex = nextPending;
+            } else if (this.currentIndex < this.totalCount - 1) {
+                this.currentIndex++;
+            }
+        },
+        prevReq() {
+            if (this.currentIndex > 0) this.currentIndex--;
+            this.editing = false;
+        },
+        nextReq() {
+            if (this.currentIndex < this.totalCount - 1) this.currentIndex++;
+            this.editing = false;
+        },
+        async finalizeBrd() {
+            this.loading = true;
+            try {
+                const resp = await fetch(`/api/v1/brd/${brdId}/finalize`, { method: 'POST' });
+                if (resp.ok) {
+                    window.location.href = `/brd/${brdId}`;
+                } else {
+                    if (typeof showToast === 'function') showToast('Failed to finalize BRD', 'error');
+                }
+            } catch (err) {
+                if (typeof showToast === 'function') showToast('Failed to finalize BRD', 'error');
+            } finally {
+                this.loading = false;
+            }
+        }
+    };
+}
+</script>
+{% endblock %}

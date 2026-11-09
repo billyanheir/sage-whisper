@@ -18,7 +18,7 @@
             </div>
             <div class="flex flex-col items-end space-y-1 ml-4 flex-shrink-0">
                 <span class="text-xs text-gray-500">{{ tx.created_at.strftime('%b %d, %Y') }}</span>
-                <span class="text-xs text-gray-500">{{ tx.language or '?' }} &middot; {{ tx.model_size }}</span>
+                <span class="text-xs {% if tx.model_size == 'imported' %}text-violet-400{% else %}text-gray-500{% endif %}">{{ tx.language or '?' }} &middot; {{ tx.model_size }}</span>
             </div>
         </div>
     </a>
